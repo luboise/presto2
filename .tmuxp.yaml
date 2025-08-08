@@ -1,0 +1,14 @@
+session_name: blocked
+
+windows:
+  - window_name: Presto
+    layout: main-vertical
+    panes:
+      - shell_command:
+          - mkdir -p build
+          - nvim .
+  - window_name: Presto Git
+    layout: main-vertical
+    panes:
+      - shell_command:
+          - lazygit
