@@ -1,6 +1,8 @@
-pub(crate) use crate::types::Size2D;
+pub trait Resize<T> {
+    fn set_size<S: Into<T>>(&mut self, new_size: T);
+    fn get_size(&self) -> T;
+}
 
-pub trait Resize {
-    fn set_size<S: Into<Size2D>>(&mut self, new_size: Size2D);
-    fn get_size(&self) -> Size2D;
+pub trait Updates {
+    fn update(&mut self);
 }

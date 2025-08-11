@@ -1,6 +1,7 @@
 use glfw::{ClientApiHint, Context, WindowHint};
 
 use crate::{
+    traits::Updates,
     types::Size2D,
     window::{Resize, WindowLike, WindowParams},
 };
@@ -19,7 +20,7 @@ impl GLFWWindow {
     pub fn from_params(params: WindowParams) -> Result<Self, glfw::InitError> {
         let mut glfw = glfw::init(glfw::fail_on_errors)?;
 
-        // glfw.window_hint(WindowHint::ClientApi(ClientApiHint::OpenGl));
+        glfw.window_hint(WindowHint::ClientApi(ClientApiHint::OpenGl));
 
         let (mut window, events) = glfw
             .create_window(
@@ -30,14 +31,9 @@ impl GLFWWindow {
             )
             .expect("Failed to create GLFW window.");
 
+        // TODO: Maybe move these somewhere else?
         window.set_key_polling(true);
         window.make_current();
-
-        while !window.should_close() {
-            window.swap_buffers();
-            glfw.poll_events();
-            for (_, _event) in glfw::flush_messages(&events) {}
-        }
 
         Ok(GLFWWindow {
             size: Size2D {
@@ -51,14 +47,25 @@ impl GLFWWindow {
     }
 }
 
-impl Resize for GLFWWindow {
+impl Resize<Size2D> for GLFWWindow {
     fn set_size<S: Into<Size2D>>(&mut self, new_size: Size2D) {
         self.size = new_size;
     }
 
     fn get_size(&self) -> Size2D {
-        return self.size;
+        self.size
     }
 }
 
-impl WindowLike for GLFWWindow {}
+impl WindowLike for GLFWWindow {
+    fn present_frame(&mut self) {
+        self.window.swap_buffers();
+    }
+}
+
+impl Updates for GLFWWindow {
+    fn update(&mut self) {
+        self.glfw_handle.poll_events()
+        // TODO: Translate the events and send them off
+    }
+}

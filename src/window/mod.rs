@@ -2,7 +2,7 @@ pub(crate) use crate::traits::Resize;
 
 mod glfw_window;
 
-use crate::window::glfw_window::GLFWWindow;
+use crate::{traits::Updates, types::Size2D, window::glfw_window::GLFWWindow};
 
 pub fn create(params: WindowParams) -> WindowInitResult<Box<impl WindowLike>> {
     match GLFWWindow::from_params(params) {
@@ -11,7 +11,9 @@ pub fn create(params: WindowParams) -> WindowInitResult<Box<impl WindowLike>> {
     }
 }
 
-pub trait WindowLike: Resize {}
+pub trait WindowLike: Resize<Size2D> + Updates {
+    fn present_frame(&mut self);
+}
 
 pub struct WindowParams {
     pub width: u32,
