@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+mod types;
+
 use vulkano::{
     VulkanLibrary,
     buffer::{Buffer, BufferCreateInfo, BufferUsage},

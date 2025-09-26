@@ -4,7 +4,7 @@ mod glfw_window;
 
 use crate::{traits::Updates, types::Size2D, window::glfw_window::GLFWWindow};
 
-pub fn create(params: WindowParams) -> WindowInitResult<Box<impl WindowLike>> {
+pub fn new(params: WindowParams) -> WindowInitResult<Box<impl WindowLike>> {
     match GLFWWindow::from_params(params) {
         Ok(w) => Ok(Box::new(w)),
         Err(_e) => Err(WindowInitError {}),

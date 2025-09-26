@@ -1,15 +1,13 @@
-pub mod renderer;
-pub mod window;
+pub mod assets;
+
+// pub mod rendering;
+
+// pub mod window;
+// pub use window::WindowLike;
+
+pub mod math;
+
+pub mod components;
 
 mod traits;
 mod types;
-
-pub use window::WindowLike;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(true, true);
-    }
-}
