@@ -1,10 +1,10 @@
 use crate::{
     math::Vec4,
-    rendering::{RenderError, Shader},
+    rendering::{Pipeline, RenderError},
 };
 
 pub trait Material: Sized {
-    fn write_to_shader(&self, shader: &mut Shader) -> Result<(), RenderError>;
+    fn write_to_shader(&self, shader: &mut Pipeline) -> Result<(), RenderError>;
 }
 
 // impl MaterialLayout for PBRMaterial {}
@@ -19,11 +19,14 @@ pub struct PBRMaterial {
 }
 
 impl Material for PBRMaterial {
-    fn write_to_shader(&self, shader: &mut Shader) -> Result<(), RenderError> {
+    fn write_to_shader(&self, shader: &mut Pipeline) -> Result<(), RenderError> {
+        todo!();
+        /*
         shader.set_texture(0, self.diffuse_texture)?;
         shader.set_sampler(1, self.diffuse_texture_sampler)?;
         // shader.set::<vec4>(2, self.base_colour)?;
         shader.set::<f32>(3, self.metallic)?;
         shader.set::<f32>(4, self.roughness)?;
+        */
     }
 }

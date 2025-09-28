@@ -1,9 +1,9 @@
 use crate::rendering::{RenderIndex, RendererOk};
 
 #[derive(Debug)]
-pub struct Shader {}
+pub struct Pipeline {}
 
-impl Shader {
+impl Pipeline {
     pub fn set<T: ShaderConstant>(&mut self, index: RenderIndex, value: T) -> RendererOk {
         todo!();
     }

@@ -1,25 +1,37 @@
-use std::sync::Arc;
-
-mod types;
+use std::{error::Error, sync::Arc};
 
 use vulkano::{
     VulkanLibrary,
-    buffer::{Buffer, BufferCreateInfo, BufferUsage},
-    command_buffer::{
-        AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferInfo,
-        allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
+    command_buffer::allocator::{
+        StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
     },
     device::{
         self, Device, DeviceCreateInfo, QueueCreateInfo, QueueFlags, physical::PhysicalDevice,
     },
+    format::Format,
     instance::{Instance, InstanceCreateInfo},
-    memory::allocator::{
-        AllocationCreateInfo, FreeListAllocator, GenericMemoryAllocator, MemoryTypeFilter,
-        StandardMemoryAllocator,
+    memory::allocator::{FreeListAllocator, GenericMemoryAllocator, StandardMemoryAllocator},
+    pipeline::{
+        GraphicsPipeline, PipelineLayout, PipelineShaderStageCreateInfo,
+        graphics::{
+            GraphicsPipelineCreateInfo,
+            color_blend::{ColorBlendAttachmentState, ColorBlendState},
+            input_assembly::InputAssemblyState,
+            multisample::MultisampleState,
+            rasterization::RasterizationState,
+            vertex_input::{Vertex, VertexDefinition},
+            viewport::{Viewport, ViewportState},
+        },
+        layout::PipelineDescriptorSetLayoutCreateInfo,
     },
-    sync::{self, GpuFuture},
+    render_pass::{RenderPass, Subpass},
+    shader::ShaderModule,
+    single_pass_renderpass,
 };
 
+use super::{CreationError, Render, RenderError, RenderIndex, RendererOk, types::Vertex3D};
+
+#[derive(Debug)]
 pub(super) struct VulkanContext {
     // Instances
     library: Arc<VulkanLibrary>,
@@ -31,161 +43,251 @@ pub(super) struct VulkanContext {
     // Allocators
     memory_allocator: Arc<GenericMemoryAllocator<FreeListAllocator>>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
+
+    pbr_render_pass: Arc<RenderPass>,
+    pbr_subpass: Arc<Subpass>,
 }
 
-struct VulkanRenderer {
+#[derive(Debug)]
+pub struct VulkanRenderer {
     vk: VulkanContext,
+
+    // pipelines: Vec<super::Pipeline>,
+    current_pipeline_index: RenderIndex,
+
+    current_vertex_buffer_index: RenderIndex,
+    current_index_buffer_index: RenderIndex,
+
+    pbr_pipeline: Arc<GraphicsPipeline>,
+}
+
+impl Render for VulkanRenderer {
+    fn bind_pipeline(&mut self, pipeline_index: RenderIndex) -> RendererOk {
+        todo!()
+    }
+
+    fn pipeline(&self) -> &super::Pipeline {
+        &self.pipelines[self.current_pipeline_index]
+    }
+
+    fn pipeline_mut(&mut self) -> &mut super::Pipeline {
+        &mut self.pipelines[self.current_pipeline_index]
+    }
+
+    fn pipelines(&self) -> &[super::Pipeline] {
+        todo!()
+    }
+
+    fn index_buffer(&self, buffer_index: RenderIndex) -> Option<super::IndexBuffer> {
+        todo!()
+    }
+
+    fn set_index_buffer(&mut self, buffer_index: RenderIndex) -> super::RendererOk {
+        todo!()
+    }
+
+    fn vertex_buffers(&mut self) -> Result<&[super::VertexBuffer], super::RenderError> {
+        todo!()
+    }
+
+    fn set_vertex_buffer(&mut self, buffer_index: RenderIndex) -> super::RendererOk {
+        todo!()
+    }
+}
+
+pub(crate) mod vs_pbr {
+    vulkano_shaders::shader! {
+        ty: "vertex",
+        // path: "src/rendering/default_shaders/default_3d.vert"
+        path: "src/rendering/default_shaders/default_3d.vert"
+    }
+}
+
+pub(crate) mod fs_pbr {
+    vulkano_shaders::shader! {
+        ty: "fragment",
+        path: "src/rendering/default_shaders/default_3d.frag"
+    }
 }
 
 impl VulkanRenderer {
-    pub fn create() -> Result<Box<VulkanRenderer>, Box<dyn std::error::Error>> {
-        let library = VulkanLibrary::new()?;
+    pub fn create() -> Result<VulkanRenderer, RenderError> {
+        (|| -> Result<Self, Box<dyn Error>> {
+            {
+                let library = VulkanLibrary::new()?;
 
-        let instance = Instance::new(
-            library.clone(),
-            InstanceCreateInfo::application_from_cargo_toml(),
-        )?;
+                let instance = Instance::new(
+                    library.clone(),
+                    InstanceCreateInfo::application_from_cargo_toml(),
+                )?;
 
-        // Get the first Vulkan capable device
-        let physical_device = instance
-            .enumerate_physical_devices()
-            .expect("could not enumerate devices")
-            .next()
-            .expect("no devices available");
+                // Get the first Vulkan capable device
+                let physical_device = instance
+                    .enumerate_physical_devices()
+                    .expect("could not enumerate devices")
+                    .next()
+                    .expect("no devices available");
 
-        for family in physical_device.queue_family_properties() {
-            println!(
-                "Found a queue family with {:?} queue(s)",
-                family.queue_count
-            );
-        }
+                for family in physical_device.queue_family_properties() {
+                    println!(
+                        "Found a queue family with {:?} queue(s)",
+                        family.queue_count
+                    );
+                }
 
-        let queue_family_index = physical_device
-            .queue_family_properties()
-            .iter()
-            .enumerate()
-            .position(|(_queue_family_index, queue_family_properties)| {
-                queue_family_properties
-                    .queue_flags
-                    .contains(QueueFlags::GRAPHICS)
-            })
-            .expect("couldn't find a graphical queue family")
-            as u32;
+                let queue_family_index = physical_device
+                    .queue_family_properties()
+                    .iter()
+                    .enumerate()
+                    .position(|(_queue_family_index, queue_family_properties)| {
+                        queue_family_properties
+                            .queue_flags
+                            .contains(QueueFlags::GRAPHICS)
+                    })
+                    .expect("couldn't find a graphical queue family")
+                    as u32;
 
-        let (device, mut queues) = Device::new(
-            physical_device.clone(),
-            DeviceCreateInfo {
-                // here we pass the desired queue family to use by index
-                queue_create_infos: vec![QueueCreateInfo {
-                    queue_family_index,
-                    ..Default::default()
-                }],
-                ..Default::default()
-            },
-        )
-        .expect("failed to create device");
+                let (device, mut queues) = Device::new(
+                    physical_device.clone(),
+                    DeviceCreateInfo {
+                        // here we pass the desired queue family to use by index
+                        queue_create_infos: vec![QueueCreateInfo {
+                            queue_family_index,
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                )
+                .expect("failed to create device");
 
-        // Assumed only a single queue, the graphics queue
-        let queue = queues.next().unwrap();
+                // Assumed only a single queue, the graphics queue
+                let queue = queues.next().ok_or(CreationError(
+                    "Unable to get first device queue.".to_string(),
+                ))?;
 
-        let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
-        let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
-            device.clone(),
-            StandardCommandBufferAllocatorCreateInfo::default(),
-        ));
+                let memory_allocator =
+                    Arc::new(StandardMemoryAllocator::new_default(device.clone()));
+                let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
+                    device.clone(),
+                    StandardCommandBufferAllocatorCreateInfo::default(),
+                ));
 
-        Ok(Box::new(VulkanRenderer {
-            vk: VulkanContext {
-                library,
-                instance,
-                physical_device,
-                device,
-                graphics_queue: queue,
-                memory_allocator,
-                command_buffer_allocator,
-            },
-        }))
+                let vs_3d: Arc<ShaderModule> =
+                    vs_pbr::load(device.clone()).expect("Unable to compile PBR Vertex Shader.");
+                let fs_3d: Arc<ShaderModule> =
+                    fs_pbr::load(device.clone()).expect("Unable to compile PBR Fragment Shader.");
+
+                let render_pass = single_pass_renderpass!(device.clone(),
+                        attachments: {
+                            color: {
+                                format: Format::R8G8B8_UNORM,
+                                samples: 1,
+                                load_op: Clear, // Clear attachment at start of render pass
+                                store_op: Store
+                            }
+                        },
+                        pass: {
+                            color: [color],
+                            depth_stencil: {}
+                        }
+                )?;
+
+                let subpass = Subpass::from(render_pass.clone(), 0)
+                    .ok_or(CreationError("Unable to create subpass 0.".to_string()))?;
+
+                let pipeline = create_pipeline(&device, subpass.clone(), &vs_3d, &fs_3d)?;
+
+                Ok(VulkanRenderer {
+                    vk: VulkanContext {
+                        library,
+                        instance,
+                        physical_device,
+                        device,
+                        graphics_queue: queue,
+                        memory_allocator,
+                        command_buffer_allocator,
+
+                        pbr_render_pass: render_pass,
+                        pbr_subpass: subpass.into(),
+                    },
+                    current_pipeline_index: 0,
+                    current_vertex_buffer_index: 0,
+                    current_index_buffer_index: 0,
+
+                    // pipelines: vec![],
+                    pbr_pipeline: pipeline,
+                })
+            }
+        })()
+        .map_err(|e| RenderError::CreationError(e.to_string()))
     }
 }
-/*
-*
-       let data: i32 = 12;
-       let buffer = Buffer::from_data(
-           memory_allocator.clone(),
-           BufferCreateInfo {
-               usage: BufferUsage::UNIFORM_BUFFER,
-               ..Default::default()
-           },
-           AllocationCreateInfo {
-               memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                   | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-               ..Default::default()
-           },
-           data,
-       )
-       .expect("failed to create buffer");
 
-       // Staging buffer for transferring data
-       let source_content: Vec<i32> = (0..64).collect();
-       let staging_buffer = Buffer::from_iter(
-           memory_allocator.clone(),
-           BufferCreateInfo {
-               usage: BufferUsage::TRANSFER_SRC,
-               ..Default::default()
-           },
-           AllocationCreateInfo {
-               memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                   | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-               ..Default::default()
-           },
-           source_content,
-       )
-       .expect("failed to create source buffer");
+fn create_pipeline(
+    device: &Arc<Device>,
+    subpass: Subpass,
+    vertex_shader: &Arc<ShaderModule>,
+    fragment_shader: &Arc<ShaderModule>,
+) -> Result<Arc<GraphicsPipeline>, CreationError> {
+    let pbr_vs = vertex_shader.entry_point("main").ok_or(
+        CreationError("Failed to get entry point main of PBR vertex shader.".to_string()).into(),
+    )?;
 
-       let destination = Buffer::from_iter(
-           memory_allocator.clone(),
-           BufferCreateInfo {
-               usage: BufferUsage::TRANSFER_DST,
-               ..Default::default()
-           },
-           AllocationCreateInfo {
-               memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                   | MemoryTypeFilter::HOST_RANDOM_ACCESS,
-               ..Default::default()
-           },
-           (0..64).map(|_| 0).collect(),
-       )
-       .expect("failed to create destination buffer");
+    let pbr_fs = fragment_shader.entry_point("main").ok_or(
+        CreationError("Failed to get entry point main of PBR fragment shader.".to_string()).into(),
+    )?;
 
-        let mut builder = AutoCommandBufferBuilder::primary(
-            command_buffer_allocator.clone(),
-            queue_family_index,
-            CommandBufferUsage::OneTimeSubmit,
-        )
-        .unwrap();
+    let pbr_vertex_input = Vertex3D::per_vertex().definition(&pbr_vs).map_err(|e| {
+        CreationError(format!(
+            "Unable to get vertex definition for PBR vertex shader. Error: {}",
+            e
+        ))
+        .into()
+    })?;
 
-        builder
-            .copy_buffer(CopyBufferInfo::buffers(
-                staging_buffer.clone(),
-                destination.clone(),
-            ))
-            .unwrap();
+    let stages = [
+        PipelineShaderStageCreateInfo::new(pbr_vs),
+        PipelineShaderStageCreateInfo::new(pbr_fs),
+    ];
 
-        let command_buffer = builder.build().unwrap();
+    let layout = PipelineLayout::new(
+        device.clone(),
+        PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
+            .into_pipeline_layout_create_info(device.clone())
+            .map_err(|e| CreationError(e.to_string()))?,
+    )
+    .map_err(|e| CreationError(e.to_string()))?;
 
-        let future = sync::now(device.clone())
-            .then_execute(queue.clone(), command_buffer)
-            .unwrap()
-            .then_signal_fence_and_flush() // same as signal fence, and then flush
-            .unwrap();
+    let viewport = Viewport {
+        offset: [0f32, 0f32],
+        extent: [1024.0, 1024.0],
+        depth_range: 0.0..=1.0,
+    };
 
-        let src_content = staging_buffer.read().unwrap();
-        let destination_content = destination.read().unwrap();
-        assert_eq!(&*src_content, &*destination_content);
+    GraphicsPipeline::new(
+        device.clone(),
+        None,
+        GraphicsPipelineCreateInfo {
+            subpass: Some(subpass.clone().into()),
+            stages: stages.into_iter().collect(),
+            vertex_input_state: Some(pbr_vertex_input),
+            // Can manually specify draw type
+            input_assembly_state: Some(InputAssemblyState::default()),
 
-        println!("Everything succeeded!");
+            viewport_state: Some(ViewportState {
+                viewports: [viewport].into_iter().collect(),
+                ..Default::default()
+            }),
 
-        future.wait(None).unwrap();
+            rasterization_state: Some(RasterizationState::default()),
+            multisample_state: Some(MultisampleState::default()),
+            color_blend_state: Some(ColorBlendState::with_attachment_states(
+                subpass.num_color_attachments(),
+                ColorBlendAttachmentState::default(),
+            )),
 
-
-*/
+            ..GraphicsPipelineCreateInfo::layout(layout)
+        },
+    )
+    .map_err(|e| CreationError(e.to_string()))
+}

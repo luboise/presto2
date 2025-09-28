@@ -40,7 +40,7 @@ impl Asset for Model {
 impl Draw for Mesh {
     fn draw<R: Render>(&self, renderer: &mut R) {
         for primitive in self.primitives {
-            renderer.set_shader(primitive.shader_index);
+            renderer.bind_pipeline(primitive.shader_index);
 
             renderer.set_vertex_buffer(primitive.vertex_buffer);
             renderer.set_index_buffer(primitive.index_buffer);

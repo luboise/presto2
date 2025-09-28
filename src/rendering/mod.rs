@@ -1,16 +1,49 @@
-// mod vulkan;
-// pub use vulkan::*;
+mod vulkan;
+use std::{error::Error, fmt::Display};
+
+pub use vulkan::*;
 
 pub mod types;
 
-mod shader;
-pub use shader::*;
+mod pipeline;
+pub use pipeline::*;
 
 pub type RenderIndex = usize;
 
 #[derive(Debug)]
 pub enum RenderError {
     MemoryError(String),
+    CreationError(String),
+}
+
+impl Display for RenderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match &self {
+                RenderError::MemoryError(s) => s,
+                RenderError::CreationError(s) => s,
+            }
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct CreationError(String);
+
+impl Error for CreationError {}
+
+impl Display for CreationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", &self.0)
+    }
+}
+
+impl From<CreationError> for RenderError {
+    fn from(value: CreationError) -> Self {
+        RenderError::CreationError(value.0)
+    }
 }
 
 pub type RendererRes<T> = Result<T, RenderError>;
@@ -44,10 +77,13 @@ pub struct VertexBuffer {}
 pub struct IndexBuffer {}
 
 pub trait Render {
-    fn set_shader(&mut self, shader_index: RenderIndex);
+    fn bind_pipeline(&mut self, pipeline_index: RenderIndex) -> RendererOk;
     // fn shader(&mut self) -> Shader;
 
-    fn shader_mut(&mut self) -> &mut Shader;
+    fn pipeline(&self) -> &Pipeline;
+    fn pipeline_mut(&mut self) -> &mut Pipeline;
+
+    fn pipelines(&self) -> &[Pipeline];
 
     fn index_buffer(&self, buffer_index: RenderIndex) -> Option<IndexBuffer>;
     fn set_index_buffer(&mut self, buffer_index: RenderIndex) -> RendererOk;
