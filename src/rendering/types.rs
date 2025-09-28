@@ -1,3 +1,4 @@
+/*
 #[derive(Debug, Clone)]
 pub struct BindError;
 
@@ -10,3 +11,6 @@ pub trait Bind<S> {
 pub trait Texture {
     fn write() -> Result<(), ()>;
 }
+
+pub struct
+*/

@@ -1,6 +1,6 @@
 pub mod assets;
 
-// pub mod rendering;
+pub mod rendering;
 
 // pub mod window;
 // pub use window::WindowLike;

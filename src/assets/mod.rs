@@ -8,6 +8,9 @@ use std::{
 mod model;
 pub use model::*;
 
+mod material;
+pub use material::*;
+
 #[derive(Debug)]
 pub enum AssetError {
     InvalidPath,
