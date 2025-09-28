@@ -1,7 +1,7 @@
 use std::{error::Error, sync::Arc};
 
 use vulkano::{
-    VulkanLibrary,
+    ValidationError, VulkanLibrary,
     command_buffer::allocator::{
         StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
     },
@@ -24,12 +24,18 @@ use vulkano::{
         },
         layout::PipelineDescriptorSetLayoutCreateInfo,
     },
-    render_pass::{RenderPass, Subpass},
+    render_pass::{
+        AttachmentReference, RenderPass, RenderPassCreateInfo, Subpass, SubpassDescription,
+    },
     shader::ShaderModule,
     single_pass_renderpass,
 };
 
+use crate::rendering::RendererRes;
+
 use super::{CreationError, Render, RenderError, RenderIndex, RendererOk, types::Vertex3D};
+
+pub use vs_pbr::ViewUniforms;
 
 #[derive(Debug)]
 pub(super) struct VulkanContext {
@@ -52,7 +58,7 @@ pub(super) struct VulkanContext {
 pub struct VulkanRenderer {
     vk: VulkanContext,
 
-    // pipelines: Vec<super::Pipeline>,
+    pipelines: Vec<super::Pipeline>,
     current_pipeline_index: RenderIndex,
 
     current_vertex_buffer_index: RenderIndex,
@@ -62,6 +68,14 @@ pub struct VulkanRenderer {
 }
 
 impl Render for VulkanRenderer {
+    fn begin_frame(&mut self) -> RendererOk {
+        Ok(())
+    }
+
+    fn end_frame(&mut self) -> RendererOk {
+        Ok(())
+    }
+
     fn bind_pipeline(&mut self, pipeline_index: RenderIndex) -> RendererOk {
         todo!()
     }
@@ -93,9 +107,19 @@ impl Render for VulkanRenderer {
     fn set_vertex_buffer(&mut self, buffer_index: RenderIndex) -> super::RendererOk {
         todo!()
     }
+
+    fn set_view_uniforms(&mut self, view_uniforms: vs_pbr::ViewUniforms) {
+        todo!()
+    }
 }
 
-pub(crate) mod vs_pbr {
+impl From<ValidationError> for CreationError {
+    fn from(value: ValidationError) -> Self {
+        CreationError(format!("{:?}", value))
+    }
+}
+
+mod vs_pbr {
     vulkano_shaders::shader! {
         ty: "vertex",
         // path: "src/rendering/default_shaders/default_3d.vert"
@@ -103,7 +127,7 @@ pub(crate) mod vs_pbr {
     }
 }
 
-pub(crate) mod fs_pbr {
+mod fs_pbr {
     vulkano_shaders::shader! {
         ty: "fragment",
         path: "src/rendering/default_shaders/default_3d.frag"
@@ -111,7 +135,7 @@ pub(crate) mod fs_pbr {
 }
 
 impl VulkanRenderer {
-    pub fn create() -> Result<VulkanRenderer, RenderError> {
+    pub fn new() -> RendererRes<VulkanRenderer> {
         (|| -> Result<Self, Box<dyn Error>> {
             {
                 let library = VulkanLibrary::new()?;
@@ -123,10 +147,11 @@ impl VulkanRenderer {
 
                 // Get the first Vulkan capable device
                 let physical_device = instance
-                    .enumerate_physical_devices()
-                    .expect("could not enumerate devices")
-                    .next()
-                    .expect("no devices available");
+                    .enumerate_physical_devices()?
+                    // .expect("could not enumerate devices")
+                    .next().ok_or(CreationError("no devices available".to_string()))?
+                    // .expect()
+                    ;
 
                 for family in physical_device.queue_family_properties() {
                     println!(
@@ -177,10 +202,29 @@ impl VulkanRenderer {
                 let fs_3d: Arc<ShaderModule> =
                     fs_pbr::load(device.clone()).expect("Unable to compile PBR Fragment Shader.");
 
+                /*
+                let render_pass = RenderPass::new(
+                    device.clone(),
+                    RenderPassCreateInfo {
+                        subpasses: vec![SubpassDescription {
+                            color_attachments: vec![Some(AttachmentReference {
+                                attachment: todo!(),
+                                layout: todo!(),
+                                stencil_layout: todo!(),
+                                aspects: todo!(),
+                                _ne: todo!(),
+                            })],
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                )?;
+                */
+
                 let render_pass = single_pass_renderpass!(device.clone(),
                         attachments: {
                             color: {
-                                format: Format::R8G8B8_UNORM,
+                                format: Format::R8G8B8A8_UNORM,
                                 samples: 1,
                                 load_op: Clear, // Clear attachment at start of render pass
                                 store_op: Store
@@ -190,9 +234,10 @@ impl VulkanRenderer {
                             color: [color],
                             depth_stencil: {}
                         }
-                )?;
+                )
+                .map_err(|e| CreationError(format!("{:?}", e)))?;
 
-                let subpass = Subpass::from(render_pass.clone(), 0)
+                let subpass: Subpass = Subpass::from(render_pass.clone(), 0)
                     .ok_or(CreationError("Unable to create subpass 0.".to_string()))?;
 
                 let pipeline = create_pipeline(&device, subpass.clone(), &vs_3d, &fs_3d)?;
@@ -214,12 +259,12 @@ impl VulkanRenderer {
                     current_vertex_buffer_index: 0,
                     current_index_buffer_index: 0,
 
-                    // pipelines: vec![],
+                    pipelines: vec![],
                     pbr_pipeline: pipeline,
                 })
             }
         })()
-        .map_err(|e| RenderError::CreationError(e.to_string()))
+        .map_err(|e| RenderError::CreationError(format!("{:?}", e)))
     }
 }
 
@@ -229,20 +274,19 @@ fn create_pipeline(
     vertex_shader: &Arc<ShaderModule>,
     fragment_shader: &Arc<ShaderModule>,
 ) -> Result<Arc<GraphicsPipeline>, CreationError> {
-    let pbr_vs = vertex_shader.entry_point("main").ok_or(
-        CreationError("Failed to get entry point main of PBR vertex shader.".to_string()).into(),
-    )?;
+    let pbr_vs = vertex_shader.entry_point("main").ok_or(CreationError(
+        "Failed to get entry point main of PBR vertex shader.".to_string(),
+    ))?;
 
-    let pbr_fs = fragment_shader.entry_point("main").ok_or(
-        CreationError("Failed to get entry point main of PBR fragment shader.".to_string()).into(),
-    )?;
+    let pbr_fs = fragment_shader.entry_point("main").ok_or(CreationError(
+        "Failed to get entry point main of PBR fragment shader.".to_string(),
+    ))?;
 
     let pbr_vertex_input = Vertex3D::per_vertex().definition(&pbr_vs).map_err(|e| {
         CreationError(format!(
             "Unable to get vertex definition for PBR vertex shader. Error: {}",
             e
         ))
-        .into()
     })?;
 
     let stages = [
@@ -268,7 +312,6 @@ fn create_pipeline(
         device.clone(),
         None,
         GraphicsPipelineCreateInfo {
-            subpass: Some(subpass.clone().into()),
             stages: stages.into_iter().collect(),
             vertex_input_state: Some(pbr_vertex_input),
             // Can manually specify draw type
@@ -286,8 +329,9 @@ fn create_pipeline(
                 ColorBlendAttachmentState::default(),
             )),
 
+            subpass: Some(subpass.into()),
             ..GraphicsPipelineCreateInfo::layout(layout)
         },
     )
-    .map_err(|e| CreationError(e.to_string()))
+    .map_err(|e| CreationError(format!("{:?}", e)))
 }

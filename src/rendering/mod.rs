@@ -50,7 +50,7 @@ pub type RendererRes<T> = Result<T, RenderError>;
 pub type RendererOk = RendererRes<()>;
 
 pub trait Draw {
-    fn draw<R: Render>(&self, renderer: &mut R);
+    fn draw<R: Render>(&self, renderer: &mut R) -> RendererOk;
 }
 
 // renderer.set_shader(self.shader_index);
@@ -62,8 +62,8 @@ pub trait Draw {
 
 #[derive(Debug)]
 pub struct DrawCall {
-    num_indices: usize,
-    start_offset: usize,
+    pub num_indices: usize,
+    pub start_offset: usize,
 }
 
 pub trait Buffer {
@@ -77,6 +77,9 @@ pub struct VertexBuffer {}
 pub struct IndexBuffer {}
 
 pub trait Render {
+    fn begin_frame(&mut self) -> RendererOk;
+    fn end_frame(&mut self) -> RendererOk;
+
     fn bind_pipeline(&mut self, pipeline_index: RenderIndex) -> RendererOk;
     // fn shader(&mut self) -> Shader;
 
@@ -92,4 +95,6 @@ pub trait Render {
     fn set_vertex_buffer(&mut self, buffer_index: RenderIndex) -> RendererOk;
     // TODO: Implement multi set
     // fn set_vertex_buffers(&mut self, buffer_index: &[RenderIndex]) -> Result<(), RenderError>;
+
+    fn set_view_uniforms(&mut self, view_uniforms: ViewUniforms);
 }

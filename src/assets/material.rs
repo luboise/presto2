@@ -9,6 +9,7 @@ pub trait Material: Sized {
 
 // impl MaterialLayout for PBRMaterial {}
 
+/*
 #[derive(Debug)]
 pub struct PBRMaterial {
     diffuse_texture: BoundTexture,
@@ -17,7 +18,9 @@ pub struct PBRMaterial {
     metallic: f32,
     roughness: f32,
 }
+*/
 
+/*
 impl Material for PBRMaterial {
     fn write_to_shader(&self, shader: &mut Pipeline) -> Result<(), RenderError> {
         todo!();
@@ -30,3 +33,4 @@ impl Material for PBRMaterial {
         */
     }
 }
+*/
