@@ -291,7 +291,8 @@ impl VulkanRenderer {
 
                 let pipeline = create_pipeline(&device, subpass.clone(), &vs_3d, &fs_3d)?;
 
-                let default_texture = todo!();
+                // TODO: Implement an actual default texture here
+                let default_texture = 0;
 
                 Ok(VulkanRenderer {
                     vk: VulkanContext {

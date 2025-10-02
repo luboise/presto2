@@ -15,7 +15,7 @@ pub trait Buffer<T> {
     fn can_write(&self, data: &[T], start_index: usize) -> bool {
         data.len() != 0
             && start_index < self.len()
-            && start_index.checked_add(data.len()).unwrap_or(usize::MAX) < self.len()
+            && start_index.checked_add(data.len()).unwrap_or(usize::MAX) <= self.len()
     }
 }
 
