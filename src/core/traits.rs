@@ -1,3 +1,7 @@
+pub trait To<T> {
+    fn to(self) -> T;
+}
+
 pub trait Resize<T> {
     fn set_size<S: Into<T>>(&mut self, new_size: T);
     fn get_size(&self) -> T;

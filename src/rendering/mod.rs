@@ -1,5 +1,5 @@
 mod vulkan;
-use std::{error::Error, fmt::Display};
+use std::{error::Error, fmt::Display, sync::Arc};
 
 pub use vulkan::*;
 
@@ -8,12 +8,26 @@ pub mod types;
 mod pipeline;
 pub use pipeline::*;
 
+/*
+mod registry;
+pub use registry::RenderRegistry;
+*/
+
+use vulkano::buffer::IndexBuffer;
+pub use vulkano::pipeline::graphics::vertex_input::Vertex;
+
+mod buffer;
+pub use buffer::*;
+
+use crate::assets::ColourFormat;
+
 pub type RenderIndex = usize;
 
 #[derive(Debug)]
 pub enum RenderError {
-    MemoryError(String),
-    CreationError(String),
+    Memory(String),
+    Creation(String),
+    ResourceMissing(String),
 }
 
 impl Display for RenderError {
@@ -22,8 +36,9 @@ impl Display for RenderError {
             f,
             "{}",
             match &self {
-                RenderError::MemoryError(s) => s,
-                RenderError::CreationError(s) => s,
+                RenderError::Memory(s) => s,
+                RenderError::Creation(s) => s,
+                RenderError::ResourceMissing(s) => s,
             }
         )
     }
@@ -42,7 +57,7 @@ impl Display for CreationError {
 
 impl From<CreationError> for RenderError {
     fn from(value: CreationError) -> Self {
-        RenderError::CreationError(value.0)
+        RenderError::Creation(value.0)
     }
 }
 
@@ -66,17 +81,38 @@ pub struct DrawCall {
     pub start_offset: usize,
 }
 
-pub trait Buffer {
-    fn len(&self) -> usize;
+pub struct ImageParams {
+    pub width: usize,
+    pub height: usize,
 
-    fn write(&mut self, bytes: &[u8], start_offset: usize) -> RendererOk;
+    pub colour_format: ColourFormat,
+
+    pub data: Vec<u8>,
 }
 
-pub struct VertexBuffer {}
+#[derive(Debug)]
+pub struct ImageHandle {
+    width: usize,
+    height: usize,
+    internal_index: RenderIndex,
+}
 
-pub struct IndexBuffer {}
+impl ImageHandle {
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
+    }
+}
+
+pub trait BufferValue: Vertex + Clone {}
 
 pub trait Render {
+    type VertexBufferType<V: BufferValue>;
+    type IndexBufferType;
+
     fn begin_frame(&mut self) -> RendererOk;
     fn end_frame(&mut self) -> RendererOk;
 
@@ -91,10 +127,24 @@ pub trait Render {
     fn index_buffer(&self, buffer_index: RenderIndex) -> Option<IndexBuffer>;
     fn set_index_buffer(&mut self, buffer_index: RenderIndex) -> RendererOk;
 
-    fn vertex_buffers(&mut self) -> Result<&[VertexBuffer], RenderError>;
-    fn set_vertex_buffer(&mut self, buffer_index: RenderIndex) -> RendererOk;
+    fn create_vertex_buffer<V: BufferValue>(
+        &mut self,
+        capacity: usize,
+    ) -> RendererRes<Self::VertexBufferType<V>>;
+
+    fn create_index_buffer(&mut self) -> RendererRes<&Self::IndexBufferType>;
+
+    // fn vertex_buffers(&mut self) -> RendererRes<&[VertexBuffer]>;
+    // fn set_vertex_buffer(&mut self, buffer_index: RenderIndex) -> RendererOk;
+
     // TODO: Implement multi set
     // fn set_vertex_buffers(&mut self, buffer_index: &[RenderIndex]) -> Result<(), RenderError>;
 
     fn set_view_uniforms(&mut self, view_uniforms: ViewUniforms);
+
+    fn create_image(&mut self, params: ImageParams) -> Arc<ImageHandle>;
+    // TODO: Implement rewriting images after they've been created
+    // fn write_image(&mut self, handle: Arc<ImageHandle>);
+
+    fn default_texture(&self) -> RenderIndex;
 }

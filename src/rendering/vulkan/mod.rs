@@ -1,7 +1,8 @@
 use std::{error::Error, sync::Arc};
 
 use vulkano::{
-    ValidationError, VulkanLibrary,
+    DeviceSize, ValidationError, VulkanLibrary,
+    buffer::{BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::allocator::{
         StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
     },
@@ -10,7 +11,10 @@ use vulkano::{
     },
     format::Format,
     instance::{Instance, InstanceCreateInfo},
-    memory::allocator::{FreeListAllocator, GenericMemoryAllocator, StandardMemoryAllocator},
+    memory::allocator::{
+        AllocationCreateInfo, FreeListAllocator, GenericMemoryAllocator, MemoryTypeFilter,
+        StandardMemoryAllocator,
+    },
     pipeline::{
         GraphicsPipeline, PipelineLayout, PipelineShaderStageCreateInfo,
         graphics::{
@@ -24,18 +28,18 @@ use vulkano::{
         },
         layout::PipelineDescriptorSetLayoutCreateInfo,
     },
-    render_pass::{
-        AttachmentReference, RenderPass, RenderPassCreateInfo, Subpass, SubpassDescription,
-    },
+    render_pass::{RenderPass, Subpass},
     shader::ShaderModule,
     single_pass_renderpass,
 };
 
-use crate::rendering::RendererRes;
+use crate::rendering::{BufferValue, RendererRes};
 
 use super::{CreationError, Render, RenderError, RenderIndex, RendererOk, types::Vertex3D};
 
 pub use vs_pbr::ViewUniforms;
+
+pub mod buffer;
 
 #[derive(Debug)]
 pub(super) struct VulkanContext {
@@ -64,10 +68,17 @@ pub struct VulkanRenderer {
     current_vertex_buffer_index: RenderIndex,
     current_index_buffer_index: RenderIndex,
 
+    default_texture: RenderIndex,
+
     pbr_pipeline: Arc<GraphicsPipeline>,
 }
 
+type VkBuffer = vulkano::buffer::Buffer;
+
 impl Render for VulkanRenderer {
+    type VertexBufferType<V: BufferValue> = buffer::VulkanVertexBuffer<V>;
+    type IndexBufferType = buffer::VulkanIndexBuffer;
+
     fn begin_frame(&mut self) -> RendererOk {
         Ok(())
     }
@@ -97,20 +108,58 @@ impl Render for VulkanRenderer {
     }
 
     fn set_index_buffer(&mut self, buffer_index: RenderIndex) -> super::RendererOk {
+        println!("Setting index buffer to index {}.", buffer_index);
+        Ok(())
+    }
+
+    fn create_vertex_buffer<V: BufferValue>(
+        &mut self,
+        capacity: usize,
+    ) -> RendererRes<Self::VertexBufferType<V>> {
+        let vb: Subbuffer<[V]> = vulkano::buffer::Buffer::new_slice::<V>(
+            self.vk.memory_allocator.clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::VERTEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                // TODO: Make this prefer device, and add a staging buffer
+                memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+            capacity as DeviceSize,
+        )?;
+
+        Ok(Self::VertexBufferType::<V> { subbuffer: vb })
+    }
+
+    fn create_index_buffer(&mut self) -> RendererRes<&Self::IndexBufferType> {
         todo!()
+    }
+
+    fn set_view_uniforms(&mut self, view_uniforms: vs_pbr::ViewUniforms) {
+        println!("Setting the view uniforms.");
+    }
+
+    fn create_image(&mut self, params: super::ImageParams) -> Arc<super::ImageHandle> {
+        todo!()
+    }
+
+    fn default_texture(&self) -> RenderIndex {
+        self.default_texture
+    }
+
+    /*
+    fn set_vertex_buffer(&mut self, buffer_index: RenderIndex) -> super::RendererOk {
+        println!("Setting vertex buffer to index {}.", buffer_index);
+        Ok(())
     }
 
     fn vertex_buffers(&mut self) -> Result<&[super::VertexBuffer], super::RenderError> {
         todo!()
     }
-
-    fn set_vertex_buffer(&mut self, buffer_index: RenderIndex) -> super::RendererOk {
-        todo!()
-    }
-
-    fn set_view_uniforms(&mut self, view_uniforms: vs_pbr::ViewUniforms) {
-        todo!()
-    }
+    */
 }
 
 impl From<ValidationError> for CreationError {
@@ -242,6 +291,8 @@ impl VulkanRenderer {
 
                 let pipeline = create_pipeline(&device, subpass.clone(), &vs_3d, &fs_3d)?;
 
+                let default_texture = todo!();
+
                 Ok(VulkanRenderer {
                     vk: VulkanContext {
                         library,
@@ -255,16 +306,18 @@ impl VulkanRenderer {
                         pbr_render_pass: render_pass,
                         pbr_subpass: subpass.into(),
                     },
+                    pipelines: vec![],
                     current_pipeline_index: 0,
                     current_vertex_buffer_index: 0,
+
                     current_index_buffer_index: 0,
 
-                    pipelines: vec![],
+                    default_texture,
                     pbr_pipeline: pipeline,
                 })
             }
         })()
-        .map_err(|e| RenderError::CreationError(format!("{:?}", e)))
+        .map_err(|e| RenderError::Creation(format!("{:?}", e)))
     }
 }
 

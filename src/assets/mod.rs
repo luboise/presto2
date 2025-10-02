@@ -5,11 +5,18 @@ use std::{
     sync::{Arc, Weak},
 };
 
+/*
 mod model;
 pub use model::*;
 
+pub mod importing;
+*/
+
 mod material;
 pub use material::*;
+
+mod texture;
+pub use texture::*;
 
 #[derive(Debug)]
 pub enum AssetError {
@@ -18,7 +25,7 @@ pub enum AssetError {
 }
 
 pub trait Asset: Sized {
-    fn from_bytes(bytes: &Arc<AssetBytes>) -> Result<Self>;
+    fn from_entry(entry: &AssetEntry) -> Result<Self>;
 }
 
 type AssetBytes = Vec<u8>;
@@ -48,6 +55,7 @@ impl AssetRegistry {
         })
     }
 
+    /*
     pub fn load_asset<A, P>(&mut self, asset_path: P) -> Result<A>
     where
         A: Asset,
@@ -79,6 +87,7 @@ impl AssetRegistry {
             A::from_bytes(&bytes)
         }
     }
+    */
 
     pub(crate) fn get_entry(&self, path_buf: &PathBuf) -> Option<&AssetEntry> {
         self.entries
