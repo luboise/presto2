@@ -67,7 +67,7 @@ impl<V: BufferValue> Buffer<V> for VulkanVertexBuffer<V> {
 
 #[derive(Debug)]
 pub struct VulkanIndexBuffer {
-    subbuffer: Subbuffer<[Index]>,
+    pub(crate) subbuffer: Subbuffer<[Index]>,
 }
 
 impl Buffer<Index> for VulkanIndexBuffer {

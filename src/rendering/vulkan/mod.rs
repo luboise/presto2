@@ -33,7 +33,7 @@ use vulkano::{
     single_pass_renderpass,
 };
 
-use crate::rendering::{BufferValue, RendererRes};
+use crate::rendering::{BufferValue, Index, RendererRes};
 
 use super::{CreationError, Render, RenderError, RenderIndex, RendererOk, types::Vertex3D};
 
@@ -134,8 +134,23 @@ impl Render for VulkanRenderer {
         Ok(Self::VertexBufferType::<V> { subbuffer: vb })
     }
 
-    fn create_index_buffer(&mut self) -> RendererRes<&Self::IndexBufferType> {
-        todo!()
+    fn create_index_buffer(&mut self, capacity: usize) -> RendererRes<Self::IndexBufferType> {
+        let ib: Subbuffer<[Index]> = vulkano::buffer::Buffer::new_slice::<Index>(
+            self.vk.memory_allocator.clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::INDEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                // TODO: Make this prefer device, and add a staging buffer
+                memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+            capacity as DeviceSize,
+        )?;
+
+        Ok(Self::IndexBufferType { subbuffer: ib })
     }
 
     fn set_view_uniforms(&mut self, view_uniforms: vs_pbr::ViewUniforms) {
