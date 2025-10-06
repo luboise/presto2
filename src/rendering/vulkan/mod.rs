@@ -33,13 +33,15 @@ use vulkano::{
     single_pass_renderpass,
 };
 
-use crate::rendering::{BufferValue, Index, RendererRes};
+use crate::rendering::{BufferValue, Index, RendererRes, vulkan::commands::VulkanCommandsCtx};
 
 use super::{CreationError, Render, RenderError, RenderIndex, RendererOk, types::Vertex3D};
 
 pub use vs_pbr::ViewUniforms;
 
 pub mod buffer;
+
+mod commands;
 
 #[derive(Debug)]
 pub(super) struct VulkanContext {
@@ -78,6 +80,7 @@ type VkBuffer = vulkano::buffer::Buffer;
 impl Render for VulkanRenderer {
     type VertexBufferType<V: BufferValue> = buffer::VulkanVertexBuffer<V>;
     type IndexBufferType = buffer::VulkanIndexBuffer;
+    type CommandsCtx = VulkanCommandsCtx;
 
     fn begin_frame(&mut self) -> RendererOk {
         Ok(())
@@ -101,15 +104,6 @@ impl Render for VulkanRenderer {
 
     fn pipelines(&self) -> &[super::Pipeline] {
         todo!()
-    }
-
-    fn index_buffer(&self, buffer_index: RenderIndex) -> Option<super::IndexBuffer> {
-        todo!()
-    }
-
-    fn set_index_buffer(&mut self, buffer_index: RenderIndex) -> super::RendererOk {
-        println!("Setting index buffer to index {}.", buffer_index);
-        Ok(())
     }
 
     fn create_vertex_buffer<V: BufferValue>(
@@ -163,6 +157,15 @@ impl Render for VulkanRenderer {
 
     fn default_texture(&self) -> RenderIndex {
         self.default_texture
+    }
+
+    fn run_commands<F>(&mut self, mut f: F) -> RendererOk
+    where
+        F: FnMut(&mut Self::CommandsCtx) -> RendererOk,
+    {
+        let mut ctx = VulkanCommandsCtx {};
+
+        f(&mut ctx)
     }
 
     /*

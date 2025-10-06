@@ -18,7 +18,7 @@ pub use vulkano::pipeline::graphics::vertex_input::Vertex;
 mod buffer;
 pub use buffer::*;
 
-use crate::assets::ColourFormat;
+use crate::{assets::ColourFormat, rendering::types::PrimitiveType};
 
 pub type RenderIndex = usize;
 
@@ -79,8 +79,7 @@ pub struct DrawCall {
     pub num_indices: usize,
     pub start_offset: usize,
 
-    pub primitive_type: PrimitiveType
-
+    pub primitive_type: PrimitiveType,
 }
 
 pub struct ImageParams {
@@ -111,34 +110,27 @@ impl ImageHandle {
 
 pub trait BufferValue: Vertex + Clone {}
 
+pub trait CommandSubmit<R>
+where
+    R: Render,
+{
+    // fn vertex_buffers(&mut self) -> RendererRes<&[R::VertexBufferType<V>]>;
+    fn set_vertex_buffer<V: BufferValue>(&mut self, buffer: &R::VertexBufferType<V>) -> RendererOk;
+    // fn set_vertex_buffers(&mut self, vertex_buffers: &[R::VertexBufferType<V>]);
 
-pub trait CommandSubmit<VB, IB> where VB: VertexBuffer, IB: IndexBuffer {
+    // fn index_buffer(&self, buffer_index: &R::IndexBufferType) -> Option<R::IndexBufferType>;
+    fn set_index_buffer(&mut self, buffer: &R::IndexBufferType) -> RendererOk;
 
-    fn set_index_buffer(&mut self, buffer_index: RenderIndex) -> RendererOk;
-
-
-    fn vertex_buffers(&mut self) -> RendererRes<&[VertexBuffer]>;
-    fn set_vertex_buffer(&mut self, buffer_index: RenderIndex) -> RendererOk;
-
-
-
-    fn set_vertex_buffers(&mut self, vertex_buffers: &[VB]);
-
-    fn index_buffer(&self, buffer_index: RenderIndex) -> Option<IndexBuffer>;
-
-    fn set_index_buffer(&mut self, index_buffer: &IB);
-
-    fn draw(&mut self, DrawCall{ num_indices, start_offset })
-
+    fn draw(&mut self, draw_call: DrawCall) -> RendererOk;
 }
 
-
-
-pub trait Render {
+pub trait Render: Sized {
     type VertexBufferType<V: BufferValue>;
     type IndexBufferType;
 
-    type CommandsCtx<V: BufferValue> : CommandSubmit<Self::VertexBufferType<V>,Self::IndexBufferType>;
+    type CommandsCtx: CommandSubmit<Self>;
+
+    // type CommandsCtx<V: BufferValue>: CommandSubmit<Self::VertexBufferType<V>, Self::IndexBufferType>;
 
     fn begin_frame(&mut self) -> RendererOk;
     fn end_frame(&mut self) -> RendererOk;
@@ -158,7 +150,6 @@ pub trait Render {
 
     fn create_index_buffer(&mut self, capacity: usize) -> RendererRes<Self::IndexBufferType>;
 
-
     // TODO: Implement multi set
     // fn set_vertex_buffers(&mut self, buffer_index: &[RenderIndex]) -> Result<(), RenderError>;
 
@@ -170,6 +161,7 @@ pub trait Render {
 
     fn default_texture(&self) -> RenderIndex;
 
-    fn run_commands(&mut self, command_fn: FnOnce<>)
-
+    fn run_commands<F>(&mut self, f: F) -> RendererOk
+    where
+        F: FnMut(&mut Self::CommandsCtx) -> RendererOk;
 }

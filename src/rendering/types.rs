@@ -43,27 +43,19 @@ impl Default for Vertex3D {
 
 impl BufferValue for Vertex3D {}
 
-/*
 #[derive(Debug)]
-pub struct RenderNode {
-    // material_index: Arc<dyn Material>,
+pub enum PrimitiveType {
+    PointList = 0,
+    LineList = 1,
+    LineStrip = 2,
 
-    // Renderer specific
-    index_buffer: RenderIndex,
-    vertex_buffer: RenderIndex,
+    TriangleList = 3,
+    TriangleStrip = 4,
+    TriangleFan = 5,
 
-    draw_call: DrawCall,
+    LineListWithAdjacency = 6,
+    LineStripWithAdjacency = 7,
+    TriangleListWithAdjacency = 8,
+    TriangleStripWithAdjacency = 9,
+    // PatchList = 10
 }
-
-impl RenderNode {
-    pub fn draw_recursive<R: Render>(&self, renderer: &mut R, transform: &Transform) -> RendererOk {
-        renderer.bind_pipeline;
-    }
-}
-
-impl Draw for RenderNode {
-    fn draw<R: Render>(&self, renderer: &mut R) -> RendererOk {
-        self.draw_recursive(renderer);
-    }
-}
-*/
