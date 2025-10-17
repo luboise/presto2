@@ -27,6 +27,7 @@ pub enum RenderError {
     Memory(String),
     Creation(String),
     ResourceMissing(String),
+    Draw(String),
 }
 
 impl Display for RenderError {
@@ -38,6 +39,7 @@ impl Display for RenderError {
                 RenderError::Memory(s) => s,
                 RenderError::Creation(s) => s,
                 RenderError::ResourceMissing(s) => s,
+                RenderError::Draw(s) => s,
             }
         )
     }
@@ -110,7 +112,7 @@ impl ImageHandle {
 
 pub trait BufferValue: Vertex + Clone {}
 
-pub trait CommandSubmit<R>
+pub trait CommandSubmit<'c, R>
 where
     R: Render,
 {
@@ -128,7 +130,7 @@ pub trait Render: Sized {
     type VertexBufferType<V: BufferValue>;
     type IndexBufferType;
 
-    type CommandsCtx: CommandSubmit<Self>;
+    type CommandsCtx<'c>: CommandSubmit<'c, Self>;
 
     // type CommandsCtx<V: BufferValue>: CommandSubmit<Self::VertexBufferType<V>, Self::IndexBufferType>;
 
@@ -163,5 +165,5 @@ pub trait Render: Sized {
 
     fn run_commands<F>(&mut self, f: F) -> RendererOk
     where
-        F: FnMut(&mut Self::CommandsCtx) -> RendererOk;
+        for<'c> F: FnMut(&'c mut Self::CommandsCtx<'c>) -> RendererOk;
 }

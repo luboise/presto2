@@ -1,7 +1,12 @@
-use crate::rendering::{BufferValue, CommandSubmit, DrawCall, Render, RendererOk, VulkanRenderer};
+use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 
-#[derive(Debug)]
-pub struct VulkanCommandsCtx {}
+use crate::rendering::{
+    BufferValue, CommandSubmit, DrawCall, Render, RenderError, RendererOk, VulkanRenderer,
+};
+
+pub struct VulkanCommandsCtx<'c> {
+    pub(crate) builder: &'c mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+}
 
 /*
 pub trait CommandSubmit<VB, IB> where VB: VertexBuffer, IB: IndexBuffer {
@@ -25,12 +30,14 @@ pub trait CommandSubmit<VB, IB> where VB: VertexBuffer, IB: IndexBuffer {
 
 */
 
-impl CommandSubmit<VulkanRenderer> for VulkanCommandsCtx {
+impl<'c> CommandSubmit<'c, VulkanRenderer> for VulkanCommandsCtx<'c> {
     fn set_vertex_buffer<V: BufferValue>(
         &mut self,
         buffer: &<VulkanRenderer as Render>::VertexBufferType<V>,
     ) -> RendererOk {
-        println!("Setting vertex buffer.");
+        self.builder
+            .bind_vertex_buffers(0, buffer.subbuffer.clone())
+            .map_err(|_| RenderError::ResourceMissing("Bad draw".to_string()))?;
 
         Ok(())
     }
@@ -39,12 +46,26 @@ impl CommandSubmit<VulkanRenderer> for VulkanCommandsCtx {
         &mut self,
         buffer: &<VulkanRenderer as Render>::IndexBufferType,
     ) -> RendererOk {
-        println!("Setting index buffer.");
+        self.builder
+            .bind_index_buffer(buffer.subbuffer.clone())
+            .map_err(|_| RenderError::ResourceMissing("Bad draw".to_string()))?;
+
         Ok(())
     }
 
     fn draw(&mut self, draw_call: DrawCall) -> RendererOk {
         println!("Drawing one thing.");
+
+        unsafe {
+            self.builder.draw_indexed(
+                draw_call.num_indices as u32,
+                1,
+                draw_call.start_offset as u32,
+                0,
+                0,
+            );
+        };
+
         Ok(())
     }
 }

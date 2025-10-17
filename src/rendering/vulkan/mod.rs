@@ -3,13 +3,16 @@ use std::{error::Error, sync::Arc};
 use vulkano::{
     DeviceSize, ValidationError, VulkanLibrary,
     buffer::{BufferCreateInfo, BufferUsage, Subbuffer},
-    command_buffer::allocator::{
-        StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
+    command_buffer::{
+        AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassBeginInfo,
+        SubpassContents, SubpassEndInfo,
+        allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
     },
     device::{
         self, Device, DeviceCreateInfo, QueueCreateInfo, QueueFlags, physical::PhysicalDevice,
     },
     format::Format,
+    image::{ImageCreateInfo, ImageType, ImageUsage, view::ImageView},
     instance::{Instance, InstanceCreateInfo},
     memory::allocator::{
         AllocationCreateInfo, FreeListAllocator, GenericMemoryAllocator, MemoryTypeFilter,
@@ -28,9 +31,10 @@ use vulkano::{
         },
         layout::PipelineDescriptorSetLayoutCreateInfo,
     },
-    render_pass::{RenderPass, Subpass},
+    render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
     shader::ShaderModule,
     single_pass_renderpass,
+    sync::{self, GpuFuture},
 };
 
 use crate::rendering::{BufferValue, Index, RendererRes, vulkan::commands::VulkanCommandsCtx};
@@ -80,7 +84,7 @@ type VkBuffer = vulkano::buffer::Buffer;
 impl Render for VulkanRenderer {
     type VertexBufferType<V: BufferValue> = buffer::VulkanVertexBuffer<V>;
     type IndexBufferType = buffer::VulkanIndexBuffer;
-    type CommandsCtx = VulkanCommandsCtx;
+    type CommandsCtx<'c> = VulkanCommandsCtx<'c>;
 
     fn begin_frame(&mut self) -> RendererOk {
         Ok(())
@@ -161,11 +165,78 @@ impl Render for VulkanRenderer {
 
     fn run_commands<F>(&mut self, mut f: F) -> RendererOk
     where
-        F: FnMut(&mut Self::CommandsCtx) -> RendererOk,
+        for<'c> F: FnMut(&'c mut Self::CommandsCtx<'c>) -> RendererOk,
     {
-        let mut ctx = VulkanCommandsCtx {};
+        let image = vulkano::image::Image::new(
+            self.vk.memory_allocator.clone(),
+            ImageCreateInfo {
+                image_type: ImageType::Dim2d,
+                format: Format::R8G8B8A8_UNORM,
+                extent: [1024, 1024, 1],
+                usage: ImageUsage::TRANSFER_DST | ImageUsage::TRANSFER_SRC,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
-        f(&mut ctx)
+        let view = ImageView::new_default(image.clone()).unwrap();
+
+        let framebuffer = Framebuffer::new(
+            self.vk.pbr_render_pass.clone(),
+            FramebufferCreateInfo {
+                attachments: vec![view],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let mut builder = AutoCommandBufferBuilder::primary(
+            self.vk.command_buffer_allocator.clone(),
+            self.vk.graphics_queue.queue_family_index(),
+            CommandBufferUsage::OneTimeSubmit,
+        )
+        .map_err(|_| RenderError::Draw("Failed to create command buffer.".to_string()))?;
+
+        // Drops the commands ctx after running the draw commands
+
+        let ctx = VulkanCommandsCtx {
+            builder: builder
+                .begin_render_pass(
+                    RenderPassBeginInfo {
+                        clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into())],
+                        ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
+                    },
+                    SubpassBeginInfo {
+                        contents: SubpassContents::Inline,
+                        ..Default::default()
+                    },
+                )
+                .map_err(|_| RenderError::Draw("Failed to begin render pass.".to_string()))?,
+        };
+
+        {
+            f(&mut ctx)?;
+        }
+
+        let command_buffer = ctx
+            .builder
+            .end_render_pass(SubpassEndInfo::default())
+            .map_err(|_| RenderError::Draw("Unable to end render pass".to_string()))?
+            .build()
+            .map_err(|_| RenderError::Draw("Unable to build command buffer.".to_string()))?;
+
+        let future = sync::now(self.vk.device.clone())
+            .then_execute(self.vk.graphics_queue.clone(), command_buffer)
+            .unwrap()
+            .then_signal_fence_and_flush()
+            .unwrap();
+        future.wait(None).unwrap();
+
+        Ok(())
     }
 
     /*
