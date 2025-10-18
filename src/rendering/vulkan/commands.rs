@@ -4,8 +4,8 @@ use crate::rendering::{
     BufferValue, CommandSubmit, DrawCall, Render, RenderError, RendererOk, VulkanRenderer,
 };
 
-pub struct VulkanCommandsCtx<'c> {
-    pub(crate) builder: &'c mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+pub struct VulkanCommandsCtx {
+    pub(crate) builder: AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 }
 
 /*
@@ -30,7 +30,7 @@ pub trait CommandSubmit<VB, IB> where VB: VertexBuffer, IB: IndexBuffer {
 
 */
 
-impl<'c> CommandSubmit<'c, VulkanRenderer> for VulkanCommandsCtx<'c> {
+impl CommandSubmit<VulkanRenderer> for VulkanCommandsCtx {
     fn set_vertex_buffer<V: BufferValue>(
         &mut self,
         buffer: &<VulkanRenderer as Render>::VertexBufferType<V>,

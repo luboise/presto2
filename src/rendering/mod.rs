@@ -112,7 +112,7 @@ impl ImageHandle {
 
 pub trait BufferValue: Vertex + Clone {}
 
-pub trait CommandSubmit<'c, R>
+pub trait CommandSubmit<R>
 where
     R: Render,
 {
@@ -130,7 +130,7 @@ pub trait Render: Sized {
     type VertexBufferType<V: BufferValue>;
     type IndexBufferType;
 
-    type CommandsCtx<'c>: CommandSubmit<'c, Self>;
+    type CommandsCtx: CommandSubmit<Self>;
 
     // type CommandsCtx<V: BufferValue>: CommandSubmit<Self::VertexBufferType<V>, Self::IndexBufferType>;
 
@@ -165,5 +165,5 @@ pub trait Render: Sized {
 
     fn run_commands<F>(&mut self, f: F) -> RendererOk
     where
-        for<'c> F: FnMut(&'c mut Self::CommandsCtx<'c>) -> RendererOk;
+        F: FnMut(&mut Self::CommandsCtx) -> RendererOk;
 }

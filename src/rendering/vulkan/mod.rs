@@ -84,7 +84,7 @@ type VkBuffer = vulkano::buffer::Buffer;
 impl Render for VulkanRenderer {
     type VertexBufferType<V: BufferValue> = buffer::VulkanVertexBuffer<V>;
     type IndexBufferType = buffer::VulkanIndexBuffer;
-    type CommandsCtx<'c> = VulkanCommandsCtx<'c>;
+    type CommandsCtx = VulkanCommandsCtx;
 
     fn begin_frame(&mut self) -> RendererOk {
         Ok(())
@@ -165,7 +165,7 @@ impl Render for VulkanRenderer {
 
     fn run_commands<F>(&mut self, mut f: F) -> RendererOk
     where
-        for<'c> F: FnMut(&'c mut Self::CommandsCtx<'c>) -> RendererOk,
+        F: FnMut(&mut Self::CommandsCtx) -> RendererOk,
     {
         let image = vulkano::image::Image::new(
             self.vk.memory_allocator.clone(),
@@ -173,7 +173,9 @@ impl Render for VulkanRenderer {
                 image_type: ImageType::Dim2d,
                 format: Format::R8G8B8A8_UNORM,
                 extent: [1024, 1024, 1],
-                usage: ImageUsage::TRANSFER_DST | ImageUsage::TRANSFER_SRC,
+                usage: ImageUsage::TRANSFER_DST
+                    | ImageUsage::TRANSFER_SRC
+                    | ImageUsage::COLOR_ATTACHMENT,
                 ..Default::default()
             },
             AllocationCreateInfo {
@@ -194,38 +196,39 @@ impl Render for VulkanRenderer {
         )
         .unwrap();
 
-        let mut builder = AutoCommandBufferBuilder::primary(
-            self.vk.command_buffer_allocator.clone(),
-            self.vk.graphics_queue.queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
-        )
-        .map_err(|_| RenderError::Draw("Failed to create command buffer.".to_string()))?;
-
         // Drops the commands ctx after running the draw commands
 
-        let ctx = VulkanCommandsCtx {
-            builder: builder
-                .begin_render_pass(
-                    RenderPassBeginInfo {
-                        clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into())],
-                        ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
-                    },
-                    SubpassBeginInfo {
-                        contents: SubpassContents::Inline,
-                        ..Default::default()
-                    },
-                )
-                .map_err(|_| RenderError::Draw("Failed to begin render pass.".to_string()))?,
+        let mut ctx = VulkanCommandsCtx {
+            builder: AutoCommandBufferBuilder::primary(
+                self.vk.command_buffer_allocator.clone(),
+                self.vk.graphics_queue.queue_family_index(),
+                CommandBufferUsage::OneTimeSubmit,
+            )
+            .map_err(|_| RenderError::Draw("Failed to create command buffer.".to_string()))?,
         };
 
-        {
-            f(&mut ctx)?;
-        }
+        ctx.builder
+            .begin_render_pass(
+                RenderPassBeginInfo {
+                    clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into())],
+                    ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
+                },
+                SubpassBeginInfo {
+                    contents: SubpassContents::Inline,
+                    ..Default::default()
+                },
+            )
+            .map_err(|_| RenderError::Draw("Failed to begin render pass.".to_string()))?;
 
-        let command_buffer = ctx
-            .builder
+        f(&mut ctx)?;
+
+        let VulkanCommandsCtx { mut builder } = ctx;
+
+        builder
             .end_render_pass(SubpassEndInfo::default())
-            .map_err(|_| RenderError::Draw("Unable to end render pass".to_string()))?
+            .map_err(|_| RenderError::Draw("Unable to end render pass".to_string()))?;
+
+        let command_buffer = builder
             .build()
             .map_err(|_| RenderError::Draw("Unable to build command buffer.".to_string()))?;
 
