@@ -2,8 +2,7 @@ pub mod assets;
 
 pub mod rendering;
 
-// pub mod window;
-// pub use window::WindowLike;
+pub mod event;
 
 pub mod components;
 pub mod core;

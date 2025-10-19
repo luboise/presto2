@@ -18,7 +18,7 @@ pub use vulkano::pipeline::graphics::vertex_input::Vertex;
 mod buffer;
 pub use buffer::*;
 
-use crate::{assets::ColourFormat, rendering::types::PrimitiveType};
+use crate::{assets::ColourFormat, event::window::Window, rendering::types::PrimitiveType};
 
 pub type RenderIndex = usize;
 
@@ -133,6 +133,8 @@ pub trait Render: Sized {
     type CommandsCtx: CommandSubmit<Self>;
 
     // type CommandsCtx<V: BufferValue>: CommandSubmit<Self::VertexBufferType<V>, Self::IndexBufferType>;
+
+    fn set_window(&mut self, window: &mut Window) -> RendererOk;
 
     fn begin_frame(&mut self) -> RendererOk;
     fn end_frame(&mut self) -> RendererOk;

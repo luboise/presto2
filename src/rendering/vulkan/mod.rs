@@ -9,11 +9,12 @@ use vulkano::{
         allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
     },
     device::{
-        self, Device, DeviceCreateInfo, QueueCreateInfo, QueueFlags, physical::PhysicalDevice,
+        self, Device, DeviceCreateInfo, DeviceExtensions, QueueCreateInfo, QueueFlags,
+        physical::PhysicalDevice,
     },
     format::Format,
     image::{ImageCreateInfo, ImageType, ImageUsage, view::ImageView},
-    instance::{Instance, InstanceCreateInfo},
+    instance::{Instance, InstanceCreateInfo, InstanceExtensions},
     memory::allocator::{
         AllocationCreateInfo, FreeListAllocator, GenericMemoryAllocator, MemoryTypeFilter,
         StandardMemoryAllocator,
@@ -34,10 +35,14 @@ use vulkano::{
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
     shader::ShaderModule,
     single_pass_renderpass,
+    swapchain::{Surface, Swapchain, SwapchainCreateInfo},
     sync::{self, GpuFuture},
 };
 
-use crate::rendering::{BufferValue, Index, RendererRes, vulkan::commands::VulkanCommandsCtx};
+use crate::{
+    event::window::Window,
+    rendering::{BufferValue, Index, RendererRes, vulkan::commands::VulkanCommandsCtx},
+};
 
 use super::{CreationError, Render, RenderError, RenderIndex, RendererOk, types::Vertex3D};
 
@@ -65,8 +70,39 @@ pub(super) struct VulkanContext {
 }
 
 #[derive(Debug)]
+pub struct VulkanSurfaceContext {
+    surface: Arc<Surface>,
+    swapchain: Arc<Swapchain>,
+    images: Vec<Arc<vulkano::image::Image>>,
+}
+
+impl VulkanSurfaceContext {
+    pub fn new_render_pass(&self, device: Arc<Device>) -> RendererRes<Arc<RenderPass>> {
+        vulkano::single_pass_renderpass!(
+            device,
+            attachments: {
+                color: {
+                    // Set the format the same as the swapchain.
+                    format: self.swapchain.image_format(),
+                    samples: 1,
+                    load_op: Clear,
+                    store_op: Store,
+                },
+            },
+            pass: {
+                color: [color],
+                depth_stencil: {},
+            },
+        )
+        .map_err(|_| RenderError::Creation("Failed to create render pass.".into()))
+    }
+}
+
+#[derive(Debug)]
 pub struct VulkanRenderer {
     vk: VulkanContext,
+
+    surface_ctx: Option<VulkanSurfaceContext>,
 
     pipelines: Vec<super::Pipeline>,
     current_pipeline_index: RenderIndex,
@@ -85,6 +121,56 @@ impl Render for VulkanRenderer {
     type VertexBufferType<V: BufferValue> = buffer::VulkanVertexBuffer<V>;
     type IndexBufferType = buffer::VulkanIndexBuffer;
     type CommandsCtx = VulkanCommandsCtx;
+
+    fn set_window(&mut self, window: &mut Window) -> RendererOk {
+        if self.surface_ctx.is_some() {
+            return Err(RenderError::Creation(
+                "Unable to bind new surface to renderer without unbinding the existing one.".into(),
+            ));
+        }
+
+        let surface =
+            unsafe { Surface::from_window_ref(self.vk.instance.clone(), &window.handle()) }
+                .map_err(|e| RenderError::Creation(e.to_string()))?;
+
+        let caps = self
+            .vk
+            .physical_device
+            .surface_capabilities(&surface, Default::default())
+            .expect("failed to get surface capabilities");
+
+        let (width, height) = window.handle().get_size();
+
+        let composite_alpha = caps.supported_composite_alpha.into_iter().next().unwrap();
+        let image_format = self
+            .vk
+            .physical_device
+            .surface_formats(&surface, Default::default())
+            .unwrap()[0]
+            .0;
+
+        let (swapchain, images) = Swapchain::new(
+            self.vk.device.clone(),
+            surface.clone(),
+            SwapchainCreateInfo {
+                min_image_count: caps.min_image_count + 1,
+                image_format,
+                image_extent: [width as u32, height as u32],
+                image_usage: ImageUsage::COLOR_ATTACHMENT,
+                composite_alpha,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        self.surface_ctx = Some(VulkanSurfaceContext {
+            surface,
+            swapchain,
+            images,
+        });
+
+        Ok(())
+    }
 
     fn begin_frame(&mut self) -> RendererOk {
         Ok(())
@@ -167,23 +253,11 @@ impl Render for VulkanRenderer {
     where
         F: FnMut(&mut Self::CommandsCtx) -> RendererOk,
     {
-        let image = vulkano::image::Image::new(
-            self.vk.memory_allocator.clone(),
-            ImageCreateInfo {
-                image_type: ImageType::Dim2d,
-                format: Format::R8G8B8A8_UNORM,
-                extent: [1024, 1024, 1],
-                usage: ImageUsage::TRANSFER_DST
-                    | ImageUsage::TRANSFER_SRC
-                    | ImageUsage::COLOR_ATTACHMENT,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
-                ..Default::default()
-            },
-        )
-        .unwrap();
+        if self.surface_ctx.is_none() {
+            return Err(RenderError::Draw("No surface to draw onto.".into()));
+        }
+
+        let image = self.surface_ctx.as_ref().unwrap().images[0].clone();
 
         let view = ImageView::new_default(image.clone()).unwrap();
 
@@ -281,18 +355,31 @@ impl VulkanRenderer {
             {
                 let library = VulkanLibrary::new()?;
 
+                // TODO: Make this try X11 if wayland fails
+                let extensions = InstanceExtensions {
+                    khr_surface: true,
+                    khr_wayland_surface: true,
+                    ..InstanceExtensions::empty()
+                };
+
                 let instance = Instance::new(
                     library.clone(),
-                    InstanceCreateInfo::application_from_cargo_toml(),
+                    InstanceCreateInfo {
+                        enabled_extensions: extensions,
+                        ..InstanceCreateInfo::application_from_cargo_toml()
+                    },
                 )?;
+
+                let device_extensions = DeviceExtensions {
+                    khr_swapchain: true,
+                    ..DeviceExtensions::empty()
+                };
 
                 // Get the first Vulkan capable device
                 let physical_device = instance
                     .enumerate_physical_devices()?
-                    // .expect("could not enumerate devices")
-                    .next().ok_or(CreationError("no devices available".to_string()))?
-                    // .expect()
-                    ;
+                    .find(|pd| pd.supported_extensions().contains(&device_extensions))
+                    .ok_or(CreationError("no devices available".to_string()))?;
 
                 for family in physical_device.queue_family_properties() {
                     println!(
@@ -321,6 +408,7 @@ impl VulkanRenderer {
                             queue_family_index,
                             ..Default::default()
                         }],
+                        enabled_extensions: device_extensions,
                         ..Default::default()
                     },
                 )
@@ -362,21 +450,7 @@ impl VulkanRenderer {
                 )?;
                 */
 
-                let render_pass = single_pass_renderpass!(device.clone(),
-                        attachments: {
-                            color: {
-                                format: Format::R8G8B8A8_UNORM,
-                                samples: 1,
-                                load_op: Clear, // Clear attachment at start of render pass
-                                store_op: Store
-                            }
-                        },
-                        pass: {
-                            color: [color],
-                            depth_stencil: {}
-                        }
-                )
-                .map_err(|e| CreationError(format!("{:?}", e)))?;
+                let render_pass = ;
 
                 let subpass: Subpass = Subpass::from(render_pass.clone(), 0)
                     .ok_or(CreationError("Unable to create subpass 0.".to_string()))?;
@@ -399,12 +473,13 @@ impl VulkanRenderer {
                         pbr_render_pass: render_pass,
                         pbr_subpass: subpass.into(),
                     },
+                    surface_ctx: None,
                     pipelines: vec![],
                     current_pipeline_index: 0,
+
                     current_vertex_buffer_index: 0,
 
                     current_index_buffer_index: 0,
-
                     default_texture,
                     pbr_pipeline: pipeline,
                 })
