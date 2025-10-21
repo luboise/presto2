@@ -22,7 +22,8 @@ layout(std140, binding = 0) uniform PBROptions {
 };
 
 void main() {
-    gl_Position = projection * view * model * vec4(a_position, 1.0);
+    // gl_Position = projection * view * model * vec4(a_position, 1.0);
+    gl_Position = vec4(a_position, 1.0);
     colour = vec4(a_colour, 1.0);
     tex_coords = a_texcoords;
 

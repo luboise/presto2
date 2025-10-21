@@ -167,7 +167,7 @@ impl Render for VulkanRenderer {
 
         let surface =
             unsafe { Surface::from_window_ref(self.vk.instance.clone(), &window.handle()) }
-                .map_err(|e| RenderError::Creation(e.to_string()))?;
+                .map_err(|e| RenderError::Creation(format!("{:?}", e)))?;
 
         let caps = self
             .vk
@@ -436,6 +436,16 @@ mod fs_pbr {
     }
 }
 
+pub fn get_required_extensions() -> InstanceExtensions {
+    InstanceExtensions {
+        khr_surface: true,
+        // khr_wayland_surface: true,
+        // khr_xcb_surface: true,
+        khr_xlib_surface: true,
+        ..InstanceExtensions::empty()
+    }
+}
+
 impl VulkanRenderer {
     pub fn new() -> RendererRes<VulkanRenderer> {
         (|| -> Result<Self, Box<dyn Error>> {
@@ -443,16 +453,12 @@ impl VulkanRenderer {
                 let library = VulkanLibrary::new()?;
 
                 // TODO: Make this try X11 if wayland fails
-                let extensions = InstanceExtensions {
-                    khr_surface: true,
-                    khr_wayland_surface: true,
-                    ..InstanceExtensions::empty()
-                };
+                let required_extensions = get_required_extensions();
 
                 let instance = Instance::new(
                     library.clone(),
                     InstanceCreateInfo {
-                        enabled_extensions: extensions,
+                        enabled_extensions: required_extensions,
                         ..InstanceCreateInfo::application_from_cargo_toml()
                     },
                 )?;

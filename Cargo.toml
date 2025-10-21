@@ -8,4 +8,8 @@ cgmath = "0.18.0"
 vulkano = "0.35.1"
 vulkano-shaders = "0.35.0"
 gltf = { version = "1.4.1", features = ["names"] }
-glfw = { version= "*", features = ["vulkan"] }
+glfw = { version = "*", default-features = false, features = [
+  "vulkan",
+  "x11",
+  "raw-window-handle-v0-6",
+] }
