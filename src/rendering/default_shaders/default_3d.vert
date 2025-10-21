@@ -15,7 +15,7 @@ layout(push_constant) uniform ViewUniforms {
     mat4 projection;
 };
 
-layout(std140, binding = 0) uniform PBROptions {
+layout(binding = 1) uniform PBROptions {
     vec4 u_baseColour;
     float u_metallic;
     float u_roughness;
@@ -27,6 +27,6 @@ void main() {
     colour = vec4(a_colour, 1.0);
     tex_coords = a_texcoords;
 
-    mat3 rotationMatrix = transpose(inverse(mat3(model)));
-    normal = normalize(rotationMatrix * a_normal);
+    // mat3 rotationMatrix = transpose(inverse(mat3(model)));
+    // normal = normalize(rotationMatrix * a_normal);
 }

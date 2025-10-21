@@ -134,7 +134,7 @@ pub trait Render: Sized {
 
     // type CommandsCtx<V: BufferValue>: CommandSubmit<Self::VertexBufferType<V>, Self::IndexBufferType>;
 
-    fn set_window(&mut self, window: &mut Window) -> RendererOk;
+    fn set_window(&mut self, window: Arc<Window>) -> RendererOk;
 
     fn begin_frame(&mut self) -> RendererOk;
     fn end_frame(&mut self) -> RendererOk;

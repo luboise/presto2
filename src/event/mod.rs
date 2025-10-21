@@ -1,15 +1,17 @@
 pub mod window;
 
-use glfw::{ClientApiHint, Context, Glfw, WindowHint};
+use std::{ops::Deref, sync::Arc};
+
+use glfw::{ClientApiHint, Glfw, WindowHint};
 use window::Window;
 
-use crate::event::window::WindowParams;
+use crate::event::window::{WindowHandle, WindowParams};
 
 #[derive(Debug)]
 pub struct EventContext {
     glfw: Glfw,
 
-    windows: Vec<Window>,
+    windows: Vec<WindowHandle>,
 }
 
 impl EventContext {
@@ -24,24 +26,26 @@ impl EventContext {
         }
     }
 
-    pub fn get_window(&mut self, index: usize) -> Option<&mut Window> {
-        self.windows.get_mut(index)
+    pub fn get_window(&mut self, index: usize) -> Option<WindowHandle> {
+        self.windows.get(index).map(Arc::clone)
     }
 
-    pub fn create_window(&mut self, params: WindowParams) -> &mut Window {
+    pub fn create_window(&mut self, params: WindowParams) -> WindowHandle {
         let new_window = Window::new(&mut self.glfw, params);
 
-        self.windows.push(new_window);
+        let arc: WindowHandle = new_window.into();
 
-        self.windows.last_mut().unwrap()
+        self.windows.push(arc.clone());
+
+        arc
     }
 
     // TODO: Make this return a result
     pub fn update(&mut self) {
         self.glfw.poll_events();
 
-        for window in &mut self.windows {
-            for (_, event) in glfw::flush_messages(window.events_mut()) {
+        for window in &self.windows {
+            for (_, event) in glfw::flush_messages(window.events().deref()) {
                 match event {
                     glfw::WindowEvent::Close => panic!("Window closed."),
                     glfw::WindowEvent::Pos(_, _)

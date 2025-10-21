@@ -11,21 +11,21 @@ pub type Mat3 = [Vec3; 3];
 pub type Mat4 = [Vec4; 4];
 
 #[derive(Debug, Clone, BufferContents, Vertex)]
-#[repr(C)]
+#[repr(C, packed)]
 pub struct Vertex3D {
-    #[name("position", "a_position")]
+    #[name("a_position")]
     #[format(R32G32B32_SFLOAT)]
     pub position: Vec3,
 
-    #[name("colour", "a_colour")]
+    #[name("a_colour")]
     #[format(R32G32B32_SFLOAT)]
     pub colour: Vec3,
 
-    #[name("normal", "a_normal")]
+    #[name("a_normal")]
     #[format(R32G32B32_SFLOAT)]
     pub normal: Vec3,
 
-    #[name("texcoords", "a_texcoords")]
+    #[name("a_texcoords")]
     #[format(R32G32_SFLOAT)]
     pub tex_coords: Vec2,
 }
@@ -42,6 +42,24 @@ impl Default for Vertex3D {
 }
 
 impl BufferValue for Vertex3D {}
+
+#[derive(Debug, Clone, BufferContents, Vertex)]
+#[repr(C)]
+pub(crate) struct VertexTest {
+    #[name("a_position")]
+    #[format(R32G32B32_SFLOAT)]
+    pub position: Vec3,
+}
+
+impl Default for VertexTest {
+    fn default() -> Self {
+        Self {
+            position: [0f32, 0f32, 0f32],
+        }
+    }
+}
+
+impl BufferValue for VertexTest {}
 
 #[derive(Debug)]
 pub enum PrimitiveType {

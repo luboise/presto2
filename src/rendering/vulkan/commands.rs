@@ -57,13 +57,15 @@ impl CommandSubmit<VulkanRenderer> for VulkanCommandsCtx {
         println!("Drawing one thing.");
 
         unsafe {
-            self.builder.draw_indexed(
-                draw_call.num_indices as u32,
-                1,
-                draw_call.start_offset as u32,
-                0,
-                0,
-            );
+            self.builder
+                .draw_indexed(
+                    draw_call.num_indices as u32,
+                    1,
+                    draw_call.start_offset as u32,
+                    0,
+                    0,
+                )
+                .map_err(|e| RenderError::Draw(format!("{:?}", e)))?;
         };
 
         Ok(())

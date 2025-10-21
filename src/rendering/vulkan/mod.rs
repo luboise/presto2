@@ -1,4 +1,4 @@
-use std::{error::Error, sync::Arc};
+use std::{error::Error, ops::Deref, sync::Arc};
 
 use vulkano::{
     DeviceSize, Validated, ValidationError, VulkanError, VulkanLibrary,
@@ -76,6 +76,8 @@ pub struct VulkanRenderContext {
 
 #[derive(Debug)]
 pub struct VulkanSurfaceContext {
+    window: Arc<Window>,
+
     recreate_swapchain: bool,
 
     surface: Arc<Surface>,
@@ -89,6 +91,12 @@ pub struct VulkanSurfaceContext {
 
     framebuffers: Vec<Arc<Framebuffer>>,
     // render_contexts: Vec<VulkanRenderContext>
+}
+
+impl VulkanSurfaceContext {
+    pub fn get_extents(&self) -> [u32; 2] {
+        self.window.framebuffer_size()
+    }
 }
 
 fn get_render_pass(
@@ -144,9 +152,8 @@ pub struct VulkanRenderer {
     pipelines: Vec<super::Pipeline>,
     current_pipeline_index: RenderIndex,
 
-    current_vertex_buffer_index: RenderIndex,
-    current_index_buffer_index: RenderIndex,
-
+    // current_vertex_buffer_index: RenderIndex,
+    // current_index_buffer_index: RenderIndex,
     default_texture: RenderIndex,
     // pbr_pipeline: Arc<GraphicsPipeline>,
 }
@@ -158,7 +165,7 @@ impl Render for VulkanRenderer {
     type IndexBufferType = buffer::VulkanIndexBuffer;
     type CommandsCtx = VulkanCommandsCtx;
 
-    fn set_window(&mut self, window: &mut Window) -> RendererOk {
+    fn set_window(&mut self, window: Arc<Window>) -> RendererOk {
         if self.surface_ctx.is_some() {
             return Err(RenderError::Creation(
                 "Unable to bind new surface to renderer without unbinding the existing one.".into(),
@@ -166,7 +173,7 @@ impl Render for VulkanRenderer {
         }
 
         let surface =
-            unsafe { Surface::from_window_ref(self.vk.instance.clone(), &window.handle()) }
+            unsafe { Surface::from_window_ref(self.vk.instance.clone(), &window.handle().deref()) }
                 .map_err(|e| RenderError::Creation(format!("{:?}", e)))?;
 
         let caps = self
@@ -205,15 +212,24 @@ impl Render for VulkanRenderer {
 
         let framebuffers = get_framebuffers(&images, &render_pass);
 
+        /*
+
         let vs_3d: Arc<ShaderModule> =
             vs_pbr::load(self.vk.device.clone()).expect("Unable to compile PBR Vertex Shader.");
         let fs_3d: Arc<ShaderModule> =
             fs_pbr::load(self.vk.device.clone()).expect("Unable to compile PBR Fragment Shader.");
+        */
+
+        let vs_3d: Arc<ShaderModule> =
+            vs_test::load(self.vk.device.clone()).expect("Unable to compile PBR Vertex Shader.");
+        let fs_3d: Arc<ShaderModule> =
+            fs_test::load(self.vk.device.clone()).expect("Unable to compile PBR Fragment Shader.");
 
         let pbr_pipeline =
             create_pipeline(&self.vk.device.clone(), subpass.clone(), &vs_3d, &fs_3d)?;
 
         self.surface_ctx = Some(VulkanSurfaceContext {
+            window,
             surface,
             swapchain,
             images,
@@ -324,8 +340,26 @@ impl Render for VulkanRenderer {
                 Err(e) => panic!("Unexpected error: {}", e),
             };
 
+        // dbg!("Current swapchain index: {}", image_index);
+
         if suboptimal {
             surface_ctx.recreate_swapchain = true
+        }
+
+        if surface_ctx.recreate_swapchain {
+            let extents = surface_ctx.get_extents();
+
+            dbg!("Recreating swapchain with extents {}", &extents);
+
+            surface_ctx
+                .swapchain
+                .recreate(SwapchainCreateInfo {
+                    image_extent: extents,
+                    ..surface_ctx.swapchain.create_info()
+                })
+                .expect("Failed to recreate swapchain.");
+
+            return Ok(());
         }
 
         let mut ctx = VulkanCommandsCtx {
@@ -334,7 +368,7 @@ impl Render for VulkanRenderer {
                 self.vk.graphics_queue.queue_family_index(),
                 CommandBufferUsage::OneTimeSubmit,
             )
-            .map_err(|_| RenderError::Draw("Failed to create command buffer.".to_string()))?,
+            .map_err(|_| RenderError::Draw("Failed to create command buffer.".into()))?,
         };
 
         ctx.builder
@@ -350,7 +384,9 @@ impl Render for VulkanRenderer {
                     ..Default::default()
                 },
             )
-            .map_err(|_| RenderError::Draw("Failed to begin render pass.".to_string()))?;
+            .map_err(|_| RenderError::Draw("Failed to begin render pass.".into()))?
+            .bind_pipeline_graphics(surface_ctx.pbr_pipeline.clone())
+            .map_err(|_| RenderError::Draw("Failed to bind PBR pipeline.".into()))?;
 
         f(&mut ctx)?;
 
@@ -390,29 +426,8 @@ impl Render for VulkanRenderer {
             }
         };
 
-        /*
-
-        let future = sync::now(self.vk.device.clone())
-            .then_execute(self.vk.graphics_queue.clone(), command_buffer)
-            .unwrap()
-            .then_signal_fence_and_flush()
-            .unwrap();
-        future.wait(None).unwrap();
-            */
-
         Ok(())
     }
-
-    /*
-    fn set_vertex_buffer(&mut self, buffer_index: RenderIndex) -> super::RendererOk {
-        println!("Setting vertex buffer to index {}.", buffer_index);
-        Ok(())
-    }
-
-    fn vertex_buffers(&mut self) -> Result<&[super::VertexBuffer], super::RenderError> {
-        todo!()
-    }
-    */
 }
 
 impl From<ValidationError> for CreationError {
@@ -429,10 +444,24 @@ mod vs_pbr {
     }
 }
 
+mod vs_test {
+    vulkano_shaders::shader! {
+        ty: "vertex",
+        path: "src/rendering/default_shaders/test_3d.vert"
+    }
+}
+
 mod fs_pbr {
     vulkano_shaders::shader! {
         ty: "fragment",
         path: "src/rendering/default_shaders/default_3d.frag"
+    }
+}
+
+mod fs_test {
+    vulkano_shaders::shader! {
+        ty: "fragment",
+        path: "src/rendering/default_shaders/test_3d.frag"
     }
 }
 
@@ -557,9 +586,9 @@ impl VulkanRenderer {
                     pipelines: vec![],
                     current_pipeline_index: 0,
 
-                    current_vertex_buffer_index: 0,
+                    // current_vertex_buffer_index: 0,
 
-                    current_index_buffer_index: 0,
+                    // current_index_buffer_index: 0,
                     default_texture,
                     // pbr_pipeline: pipeline,
                 })
@@ -593,6 +622,8 @@ fn create_pipeline(
     let stages = [
         PipelineShaderStageCreateInfo::new(pbr_vs),
         PipelineShaderStageCreateInfo::new(pbr_fs),
+        // PipelineShaderStageCreateInfo::new(pbr_vs),
+        // PipelineShaderStageCreateInfo::new(pbr_fs),
     ];
 
     let layout = PipelineLayout::new(
@@ -605,7 +636,7 @@ fn create_pipeline(
 
     let viewport = Viewport {
         offset: [0f32, 0f32],
-        extent: [1024.0, 1024.0],
+        extent: [1280.0, 720.0],
         depth_range: 0.0..=1.0,
     };
 
@@ -635,4 +666,46 @@ fn create_pipeline(
         },
     )
     .map_err(|e| CreationError(format!("{:?}", e)))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::rendering::types::VertexTest;
+
+    use super::*;
+
+    #[test]
+    fn vertex_3d_binding_description() -> Result<(), CreationError> {
+        let renderer = VulkanRenderer::new().unwrap();
+
+        let vertex_shader = vs_test::load(renderer.vk.device.clone())
+            .expect("Unable to compile PBR Vertex Shader.");
+
+        let test_vs = vertex_shader.entry_point("main").ok_or(CreationError(
+            "Failed to get entry point main of PBR vertex shader.".to_string(),
+        ))?;
+
+        let test_vertex_input = VertexTest::per_vertex().definition(&test_vs).map_err(|e| {
+            CreationError(format!(
+                "Unable to get vertex definition for PBR vertex shader. Error: {}",
+                e
+            ))
+        })?;
+
+        dbg!(VertexTest::per_vertex());
+
+        assert_eq!(
+            test_vertex_input.attributes.len(),
+            1,
+            "Should have one attribute."
+        );
+
+        let (a_index, a_desc) = test_vertex_input.attributes.iter().next().unwrap();
+
+        assert_eq!(*a_index, 0, "Attribute should be index 0.");
+        assert_eq!(a_desc.binding, 0, "Attribute binding should be index 0.");
+        assert_eq!(a_desc.offset, 0, "Position offset should be 0.");
+
+        Ok(())
+    }
 }

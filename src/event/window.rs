@@ -1,4 +1,6 @@
-use glfw::{Context, Glfw, GlfwReceiver, WindowEvent};
+use std::sync::{Arc, Mutex};
+
+use glfw::{Glfw, GlfwReceiver, WindowEvent};
 
 #[derive(Debug, Clone)]
 pub struct WindowParams {
@@ -17,10 +19,12 @@ impl Default for WindowParams {
     }
 }
 
+pub type WindowHandle = Arc<Window>;
+
 #[derive(Debug)]
 pub struct Window {
-    handle: glfw::PWindow,
-    events: GlfwReceiver<(f64, WindowEvent)>,
+    handle: Mutex<glfw::PWindow>,
+    events: Mutex<GlfwReceiver<(f64, WindowEvent)>>,
 }
 
 impl Window {
@@ -37,8 +41,8 @@ impl Window {
         window_handle.set_key_polling(false);
 
         Self {
-            handle: window_handle,
-            events,
+            handle: window_handle.into(),
+            events: events.into(),
         }
     }
 
@@ -48,15 +52,25 @@ impl Window {
     }
     */
 
-    pub(crate) fn events_mut(&mut self) -> &mut GlfwReceiver<(f64, WindowEvent)> {
-        &mut self.events
+    pub(crate) fn events(&self) -> std::sync::MutexGuard<'_, GlfwReceiver<(f64, WindowEvent)>> {
+        self.events.lock().unwrap()
     }
 
-    pub(crate) fn handle(&self) -> &glfw::PWindow {
-        &self.handle
+    pub(crate) fn events_mut(&mut self) -> &mut GlfwReceiver<(f64, WindowEvent)> {
+        self.events.get_mut().unwrap()
+    }
+
+    pub(crate) fn handle(&self) -> std::sync::MutexGuard<'_, glfw::PWindow> {
+        self.handle.lock().unwrap()
     }
 
     pub(crate) fn handle_mut(&mut self) -> &mut glfw::PWindow {
-        &mut self.handle
+        self.handle.get_mut().unwrap()
+    }
+
+    pub fn framebuffer_size(&self) -> [u32; 2] {
+        let fb_size = self.handle().get_framebuffer_size();
+
+        [fb_size.0 as u32, fb_size.1 as u32]
     }
 }

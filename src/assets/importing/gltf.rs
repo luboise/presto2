@@ -14,8 +14,6 @@ fn parse_node(ctx: &mut GltfModelContext, node: &Node) -> Option<ModelNode> {
     let transform = node.transform().to();
 
     let mesh = node.mesh().map_or(None, |mesh| {
-        let bruh = true;
-
         let mut primitives = vec![];
 
         mesh.primitives().for_each(|primitive| {
